@@ -1,2 +1,2 @@
-# Tcp-Chat-Server
+#TCPChatServer
 A chat server via tcp
