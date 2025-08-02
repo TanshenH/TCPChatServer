@@ -17,8 +17,8 @@ int main() {
   char sendBuffer[256]; // send server message
   struct sockaddr_in serverAddr;
 
-  memset(recvBuffer, 0, 256); // set all values to 0
-  memset(sendBuffer, 0, 256); // this too
+  memset(recvBuffer, 0, sizeof(recvBuffer)); // set all values to 0
+  memset(sendBuffer, 0, sizeof(sendBuffer)); // this too
 
   // initialize the socket
   clientFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -35,6 +35,7 @@ int main() {
     return EXIT_FAILURE;
   }
   while (1) {
+    memset(recvBuffer, 0, sizeof(recvBuffer));
     printf("Message : ");
     fgets(sendBuffer, 256, stdin);
     send(clientFd, sendBuffer, strlen(sendBuffer), 0); // sends to server

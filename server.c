@@ -1,4 +1,5 @@
-#include <arpa/inet.h>  // inet functions
+#include <arpa/inet.h> // inet functions
+#include <asm-generic/socket.h>
 #include <netinet/in.h> // struct sockaddr_in struture
 #include <stdio.h>      // logging
 #include <stdlib.h>     // system related func
@@ -18,6 +19,7 @@ int main() {
   int clientFd;
   int clientNum = 0;
   int checkRecv;
+  int opt = 1;
   struct sockaddr_in serverAddr;
   struct sockaddr clientAddr;
   socklen_t clientAddr_len = sizeof(clientAddr);
@@ -27,6 +29,9 @@ int main() {
 
   // initialize the server socket : like make it socket
   serverFd = socket(AF_INET, SOCK_STREAM, 0);
+
+  // set option to reuse address
+  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
   // declare the server socket information
   serverAddr.sin_family = AF_INET;
