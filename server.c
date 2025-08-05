@@ -1,83 +1,136 @@
-#include <arpa/inet.h> // inet functions
-#include <asm-generic/socket.h>
-#include <netinet/in.h> // struct sockaddr_in struture
-#include <stdio.h>      // logging
-#include <stdlib.h>     // system related func
-#include <string.h>     // mem related funcs
-#include <sys/socket.h> // socket
-#include <sys/types.h>  // for more datatypes
-#include <unistd.h>     // close()
+/*
+ *  Multithreaded server
+ *  written by : github.com/TanshenH
+ */
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#define PORT 1337 // port 1337 , hehehe elite coder !
-#define MAX_CLIENT 10
+#define PORT 1337
+#define MAX_CLIENTS 50
+#define MAX_BUFFER 1024
+
+typedef struct Client {
+  int fd;
+  int id;
+} Client;
+
+void broadcastMessage(const char *message, int clientSocket);
+void *handleClient(void *arg);
+
+Client ClientsConnected[MAX_CLIENTS];
+pthread_mutex_t clientMutex = PTHREAD_MUTEX_INITIALIZER;
+int clientCount = 0;
 
 int main() {
 
-  char recvBuffer[256]; // receive from clients
-  char sendBuffer[256]; // send to clients
-  int serverFd;
-  int clientFd;
-  int clientNum = 0;
-  int checkRecv;
-  int opt = 1;
+  int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+
   struct sockaddr_in serverAddr;
-  struct sockaddr clientAddr;
-  socklen_t clientAddr_len = sizeof(clientAddr);
-
-  memset(&recvBuffer, 0, 256); // set all values to 0
-  memset(&sendBuffer, 0, 256); // this too
-
-  // initialize the server socket : like make it socket
-  serverFd = socket(AF_INET, SOCK_STREAM, 0);
-
-  // set option to reuse address
-  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  // declare the server socket information
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(PORT);
   serverAddr.sin_addr.s_addr = INADDR_ANY;
 
-  if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+  int sockOpt = 1;
+  setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &sockOpt, sizeof(sockOpt));
+
+  if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) <
+      0) {
     perror("Bind failed");
-    return EXIT_FAILURE;
+    return 0;
   }
 
-  printf("Number of client connected : %d\n", clientNum);
+  listen(serverSocket, MAX_CLIENTS);
+
+  printf("Server started on PORT %d\n", PORT);
   while (1) {
-    // wait for clients
-    listen(serverFd, MAX_CLIENT);
-    clientFd = accept(serverFd, &clientAddr,
-                      &clientAddr_len); // accept the incoming connection
-    if (clientFd < 0) {
-      perror("accept failed");
+    int clientSocket = accept(serverSocket, NULL, NULL);
+
+    pthread_mutex_lock(&clientMutex);
+    if (clientCount >= MAX_CLIENTS) {
+      close(clientSocket);
+      pthread_mutex_unlock(&clientMutex);
       continue;
     }
-    clientNum++;
-    printf("Number of client connected : %d\n", clientNum);
 
-    while (1) {
-      memset(recvBuffer, 0, 256);
-      // receive message from client
-      checkRecv = recv(clientFd, recvBuffer, sizeof(recvBuffer), 0);
-      if (checkRecv == 0) {
-        printf("Client Disconnected\n");
-        break;
-      } else if (checkRecv < 0) {
-        perror("Recv failed");
-        break;
+    Client *client = malloc(sizeof(Client));
+    client->fd = clientSocket;
+    client->id = clientCount + 1;
+
+    ClientsConnected[clientCount++] = *client;
+    printf("Client %d connected\n", client->id);
+    pthread_mutex_unlock(&clientMutex);
+
+    pthread_t clientThread;
+    pthread_create(&clientThread, NULL, handleClient, client);
+    pthread_detach(clientThread);
+  }
+
+  close(serverSocket);
+  return 0;
+}
+
+void broadcastMessage(const char *message, int clientId) {
+
+  pthread_mutex_lock(&clientMutex);
+  for (int i = 0; i < clientCount; i++) {
+    if (ClientsConnected[i].id != clientId) {
+      write(ClientsConnected[i].fd, message, strlen(message));
+    }
+  }
+  pthread_mutex_unlock(&clientMutex);
+}
+
+void *handleClient(void *arg) {
+
+  Client *client = (Client *)arg;
+  char buffer[MAX_BUFFER] = {0};
+
+  char welcome[50] = {0};
+  char currentClients[50] = {0};
+  snprintf(welcome, sizeof(welcome),
+           "Welcome To the Chat Server ! Your ID is : %d\n", client->id);
+  snprintf(currentClients, sizeof(currentClients), "Connected Clients : %d\n",
+           clientCount);
+  write(client->fd, welcome, sizeof(welcome));
+  write(client->fd, currentClients, sizeof(currentClients));
+
+  while (1) {
+    int bytesRead = read(client->fd, buffer, sizeof(buffer));
+    if (bytesRead <= 0) {
+
+      pthread_mutex_lock(&clientMutex);
+      printf("Client %d Disconnected\n", client->id);
+
+      // search the clientid in connected client array and reduce the clientid
+      for (int i = 0; i < clientCount; i++) {
+        if (ClientsConnected[i].id == client->id) {
+          for (int j = i; j < clientCount - 1; j++) {
+            ClientsConnected[j] = ClientsConnected[j + 1];
+          }
+          clientCount--;
+          break;
+        }
       }
 
-      printf("Client%d : %s", clientNum, recvBuffer);
-      printf("Message : ");
-      fgets(sendBuffer, 256, stdin);
-      send(clientFd, sendBuffer, strlen(sendBuffer),
-           0); // send message to client
+      pthread_mutex_unlock(&clientMutex);
+      close(client->fd);
+      free(client);
+      return NULL;
     }
-    clientNum--;
-    close(clientFd);
-    printf("\nNumber of client connected : %d\n", clientNum);
+
+    buffer[bytesRead] = '\0';
+    printf("Client %d: %s", client->id, buffer);
+
+    char message[MAX_BUFFER];
+    snprintf(message, sizeof(message), "Client %d: %s", client->id, buffer);
+
+    broadcastMessage(message, client->id);
   }
-  close(serverFd);
-  return EXIT_SUCCESS;
 }
