@@ -2,15 +2,15 @@
  *  Multithreaded server
  *  written by : github.com/TanshenH
  */
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <arpa/inet.h> // inet,INADDR_ANY 
+#include <netinet/in.h> //htons()
+#include <pthread.h> //pthreads()
+#include <stdio.h> //logging
+#include <stdlib.h> // dynamic memory
+#include <string.h> // string manipulation
+#include <sys/socket.h> // sockets
+#include <sys/types.h> // more datatypes
+#include <unistd.h> // close(),read(),write()
 
 #define PORT 1337
 #define MAX_CLIENTS 50
@@ -21,7 +21,7 @@ typedef struct Client {
   int id;
 } Client;
 
-void broadcastMessage(const char *message, int clientSocket);
+void broadcastMessage(const char *message, int clientSocket); 
 void *handleClient(void *arg);
 
 Client ClientsConnected[MAX_CLIENTS];
@@ -32,6 +32,7 @@ int main() {
 
   int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
 
+  //declare server information
   struct sockaddr_in serverAddr;
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(PORT);
@@ -59,6 +60,7 @@ int main() {
       continue;
     }
 
+    //setup client
     Client *client = malloc(sizeof(Client));
     client->fd = clientSocket;
     client->id = clientCount + 1;
@@ -67,6 +69,7 @@ int main() {
     printf("Client %d connected\n", client->id);
     pthread_mutex_unlock(&clientMutex);
 
+    //setup threads
     pthread_t clientThread;
     pthread_create(&clientThread, NULL, handleClient, client);
     pthread_detach(clientThread);
@@ -78,6 +81,7 @@ int main() {
 
 void broadcastMessage(const char *message, int clientId) {
 
+  //send message to all connected clients
   pthread_mutex_lock(&clientMutex);
   for (int i = 0; i < clientCount; i++) {
     if (ClientsConnected[i].id != clientId) {
@@ -128,9 +132,11 @@ void *handleClient(void *arg) {
     buffer[bytesRead] = '\0';
     printf("Client %d: %s", client->id, buffer);
 
+    //display message to server
     char message[MAX_BUFFER];
     snprintf(message, sizeof(message), "Client %d: %s", client->id, buffer);
 
+    //display message to all connected clients
     broadcastMessage(message, client->id);
   }
 }
